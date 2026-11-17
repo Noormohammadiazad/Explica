@@ -1,0 +1,78 @@
+{
+  "name": "explica",
+  "version": "1.0.0",
+  "description": "A zero-backend, privacy-first PDF reader that turns any local PDF into a physically simulated 3D book.",
+  "keywords": [
+    "pdf",
+    "pdf-viewer",
+    "pdf-reader",
+    "book",
+    "flipbook",
+    "page-flip",
+    "page-turn",
+    "3d",
+    "three",
+    "threejs",
+    "webgl",
+    "physics",
+    "simulation",
+    "rtl",
+    "annotation",
+    "highlight",
+    "privacy"
+  ],
+  "homepage": "https://mammadali.ir/Explica/",
+  "bugs": {
+    "url": "https://github.com/Noormohammadiazad/Explica/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noormohammadiazad/Explica.git"
+  },
+  "license": "MIT",
+  "author": "Mohammadali Noormohammadi Azad",
+  "type": "module",
+  "main": "./lib/index.js",
+  "module": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./style.css": "./lib/explica.css",
+    "./pdf.worker.min.mjs": "./lib/pdf.worker.min.mjs",
+    "./pdf.renderer.min.mjs": "./lib/pdf.renderer.min.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json && node scripts/dts-extensions.mjs lib/types",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "node scripts/check-repo.mjs && tsc --noEmit && vitest run && vite build",
+    "rotate:workflow": "node scripts/rotate-workflow.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build:lib"
+  },
+  "dependencies": {
+    "@types/three": "0.187.0",
+    "pdfjs-dist": "6.5.438",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}

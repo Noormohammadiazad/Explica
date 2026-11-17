@@ -1,0 +1,40 @@
+/* ---------------------------------------------------------------- text layer
+   Transparent copies of the page text, placed over the paper by per-run
+   transforms. They never take the pointer (the canvas turns the pages); the
+   selection is set from the long-press gesture, and shows as a soft wash.
+
+   The app and the npm package (`explica/style.css`) share this file. The layer
+   is laid out in viewport pixels, so it covers the viewport whatever the size
+   and place of the canvas. Set --explica-selection to recolour the selection. */
+
+.text-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: text;
+  -webkit-user-select: text;
+  visibility: hidden;
+}
+
+.text-layer.on {
+  visibility: visible;
+}
+
+.text-layer span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: pre;
+  color: transparent;
+  font: 32px/1 sans-serif;
+  transform-origin: 0 0;
+}
+
+.text-layer span::selection {
+  background: var(--explica-selection, var(--selection, rgba(206, 106, 58, 0.3)));
+}
+
+.text-layer br::selection {
+  background: transparent;
+}

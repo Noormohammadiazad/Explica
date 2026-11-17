@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <!--
+      Privacy by construction: the page may load its own static files only, and may not
+      connect to any other origin. Your PDF never leaves this device.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: data:; img-src 'self' blob: data:; font-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#15110e" />
+    <meta name="description" content="Explica turns any local PDF into a physically simulated book — entirely in your browser, with nothing uploaded." />
+    <title>Explica — a book that behaves like one</title>
+    <!-- applies the saved or system colour theme before first paint (a file, so the CSP needs no inline script) -->
+    <script src="/theme-boot.js"></script>
+    <!--
+      First paint: only the theme's backdrop. Every element stays hidden until the
+      stylesheet and the app are ready (the app clears .preload after its first frame),
+      so raw, unstyled controls can never flash — in development the stylesheet is
+      injected by script, after the markup has already been parsed.
+    -->
+    <style>
+      html { background: #0e0c0a; }
+      html[data-theme='light'] { background: #cfc6b8; }
+      body { margin: 0; min-height: 100vh; background: radial-gradient(120% 90% at 50% 38%, #372d24 0%, #221c17 38%, #0e0c0a 100%); }
+      html[data-theme='light'] body { background: radial-gradient(120% 90% at 50% 38%, #efeae2 0%, #e0d9ce 38%, #cfc6b8 100%); }
+      html.preload body > * { visibility: hidden !important; }
+    </style>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M8 14c8-4 16-4 24 2v38c-8-6-16-6-24-2z' fill='%23efe6d6'/%3E%3Cpath d='M56 14c-8-4-16-4-24 2v38c8-6 16-6 24-2z' fill='%23d9cdb8'/%3E%3Cpath d='M32 16c6-8 14-10 22-9-6 3-14 9-22 9z' fill='%23c4562a'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="stage" aria-label="3D book. Drag pages to turn them, drag the background to rotate the book."></canvas>
+    <!-- selectable text of the visible pages, laid over the paper once the book is still -->
+    <div id="textLayer" class="text-layer" aria-label="Text of the open pages"></div>
+
+    <!-- annotation tools: Read keeps every gesture for turning pages and handling the book -->
+    <nav class="rail" id="toolRail" role="toolbar" aria-label="Annotate" aria-orientation="vertical">
+      <button class="tool" type="button" data-tool="read" aria-pressed="true" title="Read — turn pages (R)" aria-label="Read">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5c2.6-1.4 5.6-1.3 9 .9 3.4-2.2 6.4-2.3 9-.9v11.2c-2.6-1.4-5.6-1.3-9 .9-3.4-2.2-6.4-2.3-9-.9z" /><path d="M12 7.4v11.2" /></svg>
+      </button>
+      <button class="tool" type="button" data-tool="highlight" aria-pressed="false" title="Highlight text (H)" aria-label="Highlight">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4.5l5 5-7.5 7.5H7v-5z" /><path d="M7 17l-2.5 2.5" /><path d="M4 20.5h9" class="swatch-line" /></svg>
+      </button>
+      <button class="tool" type="button" data-tool="pen" aria-pressed="false" title="Pen (P)" aria-label="Pen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5l1-4.2L16.3 4.5a2 2 0 0 1 2.9 0l.3.3a2 2 0 0 1 0 2.9L8.7 18.5z" /><path d="M14.5 6.3l3.2 3.2" /></svg>
+      </button>
+      <button class="tool" type="button" data-tool="note" aria-pressed="false" title="Note (N)" aria-label="Note">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z" /><path d="M14 19.5v-5h5" /><path d="M8.5 9h7M8.5 12.5h4" /></svg>
+      </button>
+      <button class="tool" type="button" data-tool="eraser" aria-pressed="false" title="Eraser (E)" aria-label="Eraser">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19.5h11" /><path d="M4.6 14.6l8.8-8.8a2 2 0 0 1 2.8 0l2.9 2.9a2 2 0 0 1 0 2.8l-7.7 7.7H8.6z" /><path d="M10.2 9l5.6 5.6" /></svg>
+      </button>
+      <span class="rail-sep" aria-hidden="true"></span>
+      <button class="tool" type="button" id="undoBtn" title="Undo (⌘/Ctrl+Z)" aria-label="Undo" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+      </button>
+      <button class="tool" type="button" id="redoBtn" title="Redo (⇧⌘/Ctrl+Z)" aria-label="Redo" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" /></svg>
+      </button>
+    </nav>
+    <div class="tool-options" id="toolOptions" role="group" aria-label="Tool options" hidden></div>
+
+    <!-- what to do with selected text -->
+    <div class="selbar" id="selBar" role="toolbar" aria-label="Selected text" hidden>
+      <button class="selbar-btn" type="button" id="selCopy">Copy</button>
+      <span class="selbar-sep" aria-hidden="true"></span>
+      <span class="selbar-swatches" id="selSwatches"></span>
+      <button class="selbar-btn icon" type="button" id="selRemove" title="Remove highlight" aria-label="Remove highlight" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19.5h11" /><path d="M4.6 14.6l8.8-8.8a2 2 0 0 1 2.8 0l2.9 2.9a2 2 0 0 1 0 2.8l-7.7 7.7H8.6z" /></svg>
+      </button>
+    </div>
+
+    <!-- a note, opened from its mark on the page -->
+    <div class="note-pop" id="notePop" role="dialog" aria-label="Note" hidden>
+      <textarea id="noteText" rows="4" placeholder="Write a note…" aria-label="Note text"></textarea>
+      <div class="note-actions">
+        <button class="selbar-btn" type="button" id="noteDelete">Delete</button>
+        <button class="selbar-btn primary" type="button" id="noteDone">Done</button>
+      </div>
+    </div>
+    <div class="note-peek" id="notePeek" role="tooltip" hidden></div>
+
+    <header class="bar top" role="toolbar" aria-label="Document">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <span class="word">Explica</span>
+        <span class="doc" id="docName"></span>
+      </div>
+      <div class="actions">
+        <div class="toggles">
+          <button class="switch label" id="dirSwitch" type="button" role="switch" aria-checked="false" aria-label="Right-to-left book" title="Reading direction: left-to-right or right-to-left (Persian, Arabic, Hebrew…)">
+            <span>LTR</span><span>RTL</span>
+          </button>
+          <button class="switch" id="themeSwitch" type="button" role="switch" aria-checked="false" aria-label="Dark theme" title="Light or dark theme">
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.6" /><path d="M12 3.5v1.8M12 18.7v1.8M3.5 12h1.8M18.7 12h1.8M6 6l1.3 1.3M16.7 16.7 18 18M6 18l1.3-1.3M16.7 7.3 18 6" /></svg></span>
+            <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 14.6A7.5 7.5 0 0 1 9.4 5a7.5 7.5 0 1 0 9.6 9.6z" /></svg></span>
+          </button>
+        </div>
+        <span class="divider" aria-hidden="true"></span>
+        <button class="btn primary" id="openBtn" title="Open a PDF (O)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" /></svg>
+          <span>Open PDF</span>
+        </button>
+        <button class="btn icon" id="settingsBtn" title="Paper &amp; physics" aria-expanded="false" aria-controls="settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+        </button>
+        <button class="btn icon" id="helpBtn" title="How to hold the book (?)" aria-controls="help">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14" /><circle cx="12" cy="17.2" r=".6" /></svg>
+        </button>
+        <button class="btn icon" id="fsBtn" title="Fullscreen (F)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="panel" id="settings" hidden aria-label="Paper and physics">
+      <h2>Paper &amp; physics</h2>
+      <label class="row">
+        <span>Paper weight</span>
+        <input type="range" id="gsm" min="30" max="300" step="1" value="80" />
+        <output id="gsmOut">80 g/m²</output>
+      </label>
+      <label class="row">
+        <span>Stiffness</span>
+        <input type="range" id="stiff" min="-2" max="2" step="0.01" value="0" />
+        <output id="stiffOut">1.0×</output>
+      </label>
+      <label class="row">
+        <span>Binding tension</span>
+        <input type="range" id="spine" min="0" max="6" step="0.05" value="1" />
+        <output id="spineOut">1.0×</output>
+      </label>
+      <label class="row">
+        <span>Air resistance</span>
+        <input type="range" id="air" min="0" max="2.5" step="0.05" value="1" />
+        <output id="airOut">1.0×</output>
+      </label>
+      <label class="row check">
+        <input type="checkbox" id="gravity" checked />
+        <span>Gravity follows the book</span>
+      </label>
+      <div class="presets" role="group" aria-label="Presets">
+        <button class="chip" data-preset="bible">Bible paper</button>
+        <button class="chip" data-preset="book">Book</button>
+        <button class="chip" data-preset="magazine">Magazine</button>
+        <button class="chip" data-preset="card">Card stock</button>
+      </div>
+      <p class="derived" id="derived"></p>
+      <p class="stats" id="stats"></p>
+    </section>
+
+    <nav class="bar bottom" aria-label="Pages">
+      <button class="btn icon" id="pageLeftBtn" title="Previous page (←)" aria-label="Previous page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+      </button>
+      <div class="pager">
+        <input type="range" id="scrub" min="0" max="0" step="1" value="0" aria-label="Go to page" />
+        <span class="folio" id="folio" aria-live="polite"></span>
+      </div>
+      <button class="btn icon" id="pageRightBtn" title="Next page (→)" aria-label="Next page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+      </button>
+    </nav>
+
+    <section class="overlay help" id="help" hidden aria-label="How to hold the book">
+      <div class="card">
+        <h2>Hold it like a book</h2>
+        <dl>
+          <dt>Turn a page</dt><dd>Drag it from anywhere — slowly to peel, briskly to flick. Click a page or press ← → to turn automatically.</dd>
+          <dt>Direction</dt><dd>Switch to <b>RTL</b> for right-to-left books: page 1 opens on the left and pages turn to the right. PDFs that declare a direction open that way.</dd>
+          <dt>Catch a page</dt><dd>Grab it while it is in the air.</dd>
+          <dt>Copy text</dt><dd>Press and hold on a line until a word lights up, then drag to select. Copy it, or pick a colour to highlight it. ⌘/Ctrl+A selects the open pages.</dd>
+          <dt>Annotate</dt><dd>The tools on the left: <b>Highlight</b> (drag across text), <b>Pen</b>, <b>Note</b> (click to pin one, click it again to edit) and <b>Eraser</b>. <b>Read</b> (R) gives the pages back to turning. ⌘/Ctrl+Z undoes. Everything stays in this browser, tied to the file — the PDF itself is never changed.</dd>
+          <dt>Turn &amp; tilt</dt><dd>Drag the background, or Alt-drag anywhere — the book follows your hand. Sideways turns it about its spine; down lifts it towards you.</dd>
+          <dt>Pan</dt><dd>Right-drag, Shift-drag, Space-drag, or two-finger scroll.</dd>
+          <dt>Zoom</dt><dd>Wheel, pinch, or + / −. It follows the cursor.</dd>
+          <dt>Reset view</dt><dd>Double-click the background, or press 0.</dd>
+          <dt>Touch</dt><dd>One finger turns pages or the book; two fingers pinch, pan and twist.</dd>
+        </dl>
+        <p class="privacy">Your PDF is read, rendered and simulated on this device. Nothing is uploaded.</p>
+        <button class="btn primary" id="helpClose">Start reading</button>
+      </div>
+    </section>
+
+    <section class="overlay drop" id="drop" hidden aria-hidden="true">
+      <div class="dropzone"><span>Drop a PDF to open it</span><small>It stays on this device</small></div>
+    </section>
+
+    <section class="overlay loading" id="loading" hidden aria-live="polite">
+      <div class="card slim">
+        <p id="loadingText">Opening…</p>
+        <div class="progress"><i id="loadingBar"></i></div>
+      </div>
+    </section>
+
+    <dialog id="pwDialog">
+      <form method="dialog">
+        <h2>This PDF is protected</h2>
+        <p id="pwHint">Enter its password to open it. The password stays on this device.</p>
+        <input type="password" id="pwInput" autocomplete="off" required />
+        <menu>
+          <button value="cancel" class="btn" formnovalidate>Cancel</button>
+          <button value="ok" class="btn primary">Open</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+    <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden />
+    <noscript>Explica needs JavaScript and WebGL 2.</noscript>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
